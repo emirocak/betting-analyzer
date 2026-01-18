@@ -5,7 +5,7 @@ from flask_cors import CORS
 import sqlite3
 import json
 from datetime import datetime
-from sofascore_api import SofascoreAPI
+from sofascore_api import FootballDataAPI
 from betting_analyzer import BettingAnalyzer
 import logging
 
@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize modules
-api = SofascoreAPI()
+api = FootballDataAPI()
 analyzer = BettingAnalyzer()
 
 # Cloud'da çalışmak için database yolu
