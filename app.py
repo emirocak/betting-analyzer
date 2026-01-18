@@ -320,6 +320,25 @@ def health():
     })
 
 
+@app.route('/matches/today', methods=['GET'])
+def get_todays_matches():
+    """
+    Bugünün maçlarını getir (Süper Lig ve Avrupa)
+    """
+    try:
+        matches = api.get_todays_matches()
+        
+        return jsonify({
+            'success': True,
+            'matches': matches,
+            'count': len(matches)
+        })
+    
+    except Exception as e:
+        logger.error(f"Today's matches error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
 # Hata yönetimi
 @app.errorhandler(404)
 def not_found(error):

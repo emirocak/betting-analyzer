@@ -253,6 +253,85 @@ class SofascoreAPI:
             print(f"❌ H2H hatası: {e}")
         
         return None
+    
+    def get_todays_matches(self):
+        """
+        Bugünün maçlarını getir (Süper Lig ve Avrupa)
+        """
+        try:
+            from datetime import datetime
+            
+            # Bugünün tarihini al
+            today = datetime.now().strftime('%Y-%m-%d')
+            
+            url = f"{self.base_url}/sport/football/events"
+            params = {
+                'date': today,
+                'status': 'notstarted'  # Henüz başlamamış maçlar
+            }
+            
+            response = requests.get(url, params=params, headers=self.headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                matches = data.get('events', [])
+                
+                # Süper Lig ve Avrupa maçlarını filtrele
+                filtered_matches = self._filter_league_matches(matches)
+                
+                return filtered_matches
+            
+            return []
+        
+        except Exception as e:
+            print(f"❌ Bugün maçları hatası: {e}")
+            return []
+    
+    def _filter_league_matches(self, matches):
+        """
+        Süper Lig ve Avrupa maçlarını filtrele
+        """
+        filtered = []
+        
+        # Aranan ligler
+        target_leagues = [
+            'Super Lig',           # Türkiye
+            'Champions League',    # Avrupa
+            'Europa League',       # Avrupa
+            'Conference League',   # Avrupa
+            'La Liga',            # İspanya
+            'Premier League',      # İngiltere
+            'Serie A',            # İtalya
+            'Bundesliga',         # Almanya
+            'Ligue 1',            # Fransa
+        ]
+        
+        for match in matches:
+            tournament = match.get('tournament', {})
+            league_name = tournament.get('name', '')
+            
+            # Eğer hedef liglerden biriyse ekle
+            if any(league in league_name for league in target_leagues):
+                home_team = match.get('homeTeam', {})
+                away_team = match.get('awayTeam', {})
+                
+                match_info = {
+                    'id': match.get('id'),
+                    'home_team': home_team.get('name'),
+                    'home_team_id': home_team.get('id'),
+                    'away_team': away_team.get('name'),
+                    'away_team_id': away_team.get('id'),
+                    'start_time': match.get('startTimestamp'),
+                    'league': league_name,
+                    'status': match.get('status'),
+                }
+                
+                filtered.append(match_info)
+        
+        # Saate göre sırala
+        filtered.sort(key=lambda x: x['start_time'] if x['start_time'] else 0)
+        
+        return filtered
 
 
 # Örnek kullanım
@@ -294,3 +373,82 @@ if __name__ == "__main__":
     # Maç detaylarını al (örnek maç ID'si)
     print("\n📋 Maç Detayları Örneği:")
     # Bu bölüm belirli bir maç ID'si ile çalışır
+    
+    def get_todays_matches(self):
+        """
+        Bugünün maçlarını getir (Süper Lig ve Avrupa)
+        """
+        try:
+            from datetime import datetime, timedelta
+            
+            # Bugünün tarihini al
+            today = datetime.now().strftime('%Y-%m-%d')
+            
+            url = f"{self.base_url}/sport/football/events"
+            params = {
+                'date': today,
+                'status': 'notstarted'  # Henüz başlamamış maçlar
+            }
+            
+            response = requests.get(url, params=params, headers=self.headers, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                matches = data.get('events', [])
+                
+                # Süper Lig ve Avrupa maçlarını filtrele
+                filtered_matches = self._filter_league_matches(matches)
+                
+                return filtered_matches
+            
+            return []
+        
+        except Exception as e:
+            print(f"❌ Bugün maçları hatası: {e}")
+            return []
+    
+    def _filter_league_matches(self, matches):
+        """
+        Süper Lig ve Avrupa maçlarını filtrele
+        """
+        filtered = []
+        
+        # Aranan ligler
+        target_leagues = [
+            'Super Lig',           # Türkiye
+            'Champions League',    # Avrupa
+            'Europa League',       # Avrupa
+            'Conference League',   # Avrupa
+            'La Liga',            # İspanya
+            'Premier League',      # İngiltere
+            'Serie A',            # İtalya
+            'Bundesliga',         # Almanya
+            'Ligue 1',            # Fransa
+        ]
+        
+        for match in matches:
+            tournament = match.get('tournament', {})
+            league_name = tournament.get('name', '')
+            
+            # Eğer hedef liglerden biriyse ekle
+            if any(league in league_name for league in target_leagues):
+                home_team = match.get('homeTeam', {})
+                away_team = match.get('awayTeam', {})
+                
+                match_info = {
+                    'id': match.get('id'),
+                    'home_team': home_team.get('name'),
+                    'home_team_id': home_team.get('id'),
+                    'away_team': away_team.get('name'),
+                    'away_team_id': away_team.get('id'),
+                    'start_time': match.get('startTimestamp'),
+                    'league': league_name,
+                    'status': match.get('status'),
+                }
+                
+                filtered.append(match_info)
+        
+        # Saate göre sırala
+        filtered.sort(key=lambda x: x['start_time'])
+        
+        return filtered
