@@ -1,291 +1,337 @@
-import math
-from typing import Dict, List
+from typing import Dict, List, Tuple
+from datetime import datetime
+import json
 
 class BettingAnalyzer:
     """
-    İddia analiz motoru
-    Form, H2H, gol istatistikleri ve ev avantajını kullanıyor
+    İstatistikleri analiz edip iddia tahminleri yapan sınıf
     """
     
     def __init__(self):
         self.weights = {
-            'form': 0.25,
-            'h2h': 0.15,
-            'home_advantage': 0.10,
-            'goals': 0.25,
-            'defense': 0.15,
-            'streak': 0.10
+            'recent_form': 0.25,      # Son form % 25
+            'h2h': 0.15,               # Head-to-head % 15
+            'home_advantage': 0.10,    # Ev sahibi avantajı % 10
+            'goal_stats': 0.25,        # Gol istatistikleri % 25
+            'defense': 0.15,           # Savunma % 15
+            'streak': 0.10             # Seri % 10
         }
     
-    def analyze_match(self, home_form: Dict, away_form: Dict, h2h: Dict) -> Dict:
+    def analyze_match(self, home_team: Dict, away_team: Dict, h2h: Dict) -> Dict:
         """
-        Maç analizi yap
+        İki takım arasındaki maçı analiz et
         
-        Args:
-            home_form: Ev sahibi takımın form verisi
-            away_form: Deplasman takımının form verisi
-            h2h: İki takım arası geçmiş
-        
-        Returns:
-            Analiz sonuçları (win %, gol tahminleri, tavsiye)
+        home_team: {form, wins, draws, losses, goals_for, goals_against}
+        away_team: aynı yapı
+        h2h: head-to-head verisi
         """
         
-        # 1. FORM ANALİZİ
-        home_form_score = self._calculate_form_score(home_form)
-        away_form_score = self._calculate_form_score(away_form)
+        analysis = {
+            'home_win_prob': 0,
+            'draw_prob': 0,
+            'away_win_prob': 0,
+            'over_2_5_prob': 0,  # 2.5 üstü gol
+            'under_2_5_prob': 0,
+            'both_teams_score': 0,
+            'detailed_analysis': {},
+            'recommendation': '',
+            'risk_level': 'medium'
+        }
         
-        # 2. H2H ANALİZİ
-        h2h_score = self._calculate_h2h_score(h2h, home_form.get('name', 'Home'))
+        # 1. Form analizi
+        form_analysis = self._analyze_form(home_team, away_team)
         
-        # 3. GÖL ANALİZİ
-        home_gf_avg = home_form.get('goals_for', 0) / max(len(home_form.get('form', [])), 1)
-        away_gf_avg = away_form.get('goals_for', 0) / max(len(away_form.get('form', [])), 1)
-        home_ga_avg = home_form.get('goals_against', 0) / max(len(home_form.get('form', [])), 1)
-        away_ga_avg = away_form.get('goals_against', 0) / max(len(away_form.get('form', [])), 1)
+        # 2. H2H analizi
+        h2h_analysis = self._analyze_h2h(h2h)
         
-        # 4. SERI ANALİZİ (W/D/L)
-        home_streak = self._calculate_streak(home_form.get('form', []))
-        away_streak = self._calculate_streak(away_form.get('form', []))
+        # 3. Gol analizi
+        goal_analysis = self._analyze_goals(home_team, away_team)
         
-        # 5. SAVUNMA ANALİZİ
-        home_defense_score = self._calculate_defense_score(away_form)
-        away_defense_score = self._calculate_defense_score(home_form)
+        # 4. Savunma analizi
+        defense_analysis = self._analyze_defense(home_team, away_team)
         
-        # 6. EV AVANTAJI (ev sahibi takım +0.15 bonus)
-        home_advantage_bonus = 0.15
+        # 5. Seri analizi
+        streak_analysis = self._analyze_streak(home_team, away_team)
         
-        # AĞIRLIKLI HESAPLAMA
-        home_win_prob = (
-            home_form_score * self.weights['form'] +
-            h2h_score * self.weights['h2h'] +
-            home_advantage_bonus * self.weights['home_advantage'] +
-            (home_gf_avg / (home_gf_avg + away_gf_avg + 1)) * self.weights['goals'] +
-            home_defense_score * self.weights['defense'] +
-            home_streak * self.weights['streak']
+        # Ağırlıklı hesaplama
+        analysis['home_win_prob'] = (
+            form_analysis['home_advantage'] * self.weights['recent_form'] +
+            h2h_analysis['home_win'] * self.weights['h2h'] +
+            0.55 * self.weights['home_advantage'] +  # Ev sahibi avantajı
+            goal_analysis['home_scoring'] * self.weights['goal_stats'] +
+            defense_analysis['home_defense'] * self.weights['defense'] +
+            streak_analysis['home_streak'] * self.weights['streak']
         )
         
-        away_win_prob = (
-            away_form_score * self.weights['form'] +
-            (1 - h2h_score) * self.weights['h2h'] +
-            (away_gf_avg / (home_gf_avg + away_gf_avg + 1)) * self.weights['goals'] +
-            away_defense_score * self.weights['defense'] +
-            away_streak * self.weights['streak']
+        analysis['away_win_prob'] = (
+            form_analysis['away_advantage'] * self.weights['recent_form'] +
+            h2h_analysis['away_win'] * self.weights['h2h'] +
+            0.45 * self.weights['home_advantage'] +
+            goal_analysis['away_scoring'] * self.weights['goal_stats'] +
+            defense_analysis['away_defense'] * self.weights['defense'] +
+            streak_analysis['away_streak'] * self.weights['streak']
         )
         
-        # Beraberlik olasılığı
-        draw_prob = 1 - home_win_prob - away_win_prob
+        # Beraberlik ihtimali
+        analysis['draw_prob'] = 1 - analysis['home_win_prob'] - analysis['away_win_prob']
+        analysis['draw_prob'] = max(0, min(1, analysis['draw_prob']))
         
-        # Negatif değerleri sıfırla
-        home_win_prob = max(0, min(1, home_win_prob))
-        away_win_prob = max(0, min(1, away_win_prob))
-        draw_prob = max(0, min(1, draw_prob))
+        # Gol over/under
+        avg_goals = goal_analysis['expected_goals']
+        analysis['over_2_5_prob'] = self._poisson_probability(avg_goals, 2.5)
+        analysis['under_2_5_prob'] = 1 - analysis['over_2_5_prob']
         
-        # NORMALIZASYON (toplam 100% olsun)
-        total = home_win_prob + away_win_prob + draw_prob
-        if total > 0:
-            home_win_prob /= total
-            away_win_prob /= total
-            draw_prob /= total
-        
-        # GOL TAHMİNLERİ (Poisson dağılımı)
-        expected_home_goals = home_gf_avg
-        expected_away_goals = away_gf_avg
-        
-        over_2_5_prob = self._poisson_over_2_5(expected_home_goals, expected_away_goals)
-        both_teams_score = self._both_teams_score_prob(expected_home_goals, expected_away_goals)
-        
-        # RİSK SEVİYESİ
-        risk_level = self._calculate_risk_level(
-            home_win_prob, away_win_prob, draw_prob,
-            home_form_score, away_form_score
+        # İki takım da gol atacak mı
+        analysis['both_teams_score'] = (
+            goal_analysis['home_scoring'] * 
+            (1 - defense_analysis['away_defense'])
+        ) * (
+            goal_analysis['away_scoring'] * 
+            (1 - defense_analysis['home_defense'])
         )
         
-        # TAVSİYE
-        recommendation = self._generate_recommendation(
-            home_win_prob, away_win_prob, draw_prob,
-            over_2_5_prob, both_teams_score,
-            home_form_score, away_form_score
-        )
+        # Detaylı analiz
+        analysis['detailed_analysis'] = {
+            'form': form_analysis,
+            'h2h': h2h_analysis,
+            'goals': goal_analysis,
+            'defense': defense_analysis,
+            'streak': streak_analysis
+        }
+        
+        # Tavsiye oluştur
+        analysis['recommendation'] = self._generate_recommendation(analysis)
+        
+        # Risk seviyesini hesapla
+        analysis['risk_level'] = self._assess_risk(analysis)
+        
+        return analysis
+    
+    def _analyze_form(self, home_team: Dict, away_team: Dict) -> Dict:
+        """
+        Son form analizi (0-1 arası)
+        """
+        home_form = home_team.get('form', [])
+        away_form = away_team.get('form', [])
+        
+        # Form puanı hesapla (W=3, D=1, L=0)
+        def form_score(form_list):
+            if not form_list:
+                return 0.5
+            points = sum(3 if r == 'W' else (1 if r == 'D' else 0) for r in form_list)
+            return points / (len(form_list) * 3)
+        
+        home_form_score = form_score(home_form)
+        away_form_score = form_score(away_form)
+        
+        total = home_form_score + away_form_score
+        if total == 0:
+            total = 1
         
         return {
-            'home_win_prob': home_win_prob,
-            'draw_prob': draw_prob,
-            'away_win_prob': away_win_prob,
-            'over_2_5_prob': over_2_5_prob,
-            'under_2_5_prob': 1 - over_2_5_prob,
-            'both_teams_score': both_teams_score,
-            'recommendation': recommendation,
-            'risk_level': risk_level,
-            'detailed_analysis': {
-                'form': {
-                    'home_form_score': home_form_score,
-                    'away_form_score': away_form_score,
-                    'home_recent': home_form.get('form', []),
-                    'away_recent': away_form.get('form', [])
-                },
-                'h2h': {
-                    'home_wins': h2h.get('team1_wins', 0),
-                    'away_wins': h2h.get('team2_wins', 0),
-                    'draws': h2h.get('draws', 0)
-                },
-                'goals': {
-                    'home_scoring': home_gf_avg,
-                    'away_scoring': away_gf_avg,
-                    'home_gf_avg': home_gf_avg,
-                    'away_gf_avg': away_gf_avg,
-                    'expected_goals': f"Home: {expected_home_goals:.2f}, Away: {expected_away_goals:.2f}"
-                },
-                'defense': {
-                    'home_ga_avg': home_ga_avg,
-                    'away_ga_avg': away_ga_avg
-                }
-            }
+            'home_advantage': home_form_score / total,
+            'away_advantage': away_form_score / total,
+            'home_form_string': ''.join(home_form),
+            'away_form_string': ''.join(away_form)
         }
     
-    def _calculate_form_score(self, form_data: Dict) -> float:
-        """Form puanını hesapla (0-1 arası)"""
-        if not form_data:
-            return 0.5
+    def _analyze_h2h(self, h2h: Dict) -> Dict:
+        """
+        Head-to-head analizi
+        """
+        if not h2h:
+            return {'home_win': 0.5, 'away_win': 0.5, 'draws': 0}
         
-        wins = form_data.get('wins', 0)
-        draws = form_data.get('draws', 0)
-        losses = form_data.get('losses', 0)
-        
-        total = wins + draws + losses
+        total = h2h['team1_wins'] + h2h['team2_wins'] + h2h['draws']
         if total == 0:
-            return 0.5
+            return {'home_win': 0.5, 'away_win': 0.5, 'draws': 0}
         
-        # Win = 3 puan, Draw = 1 puan, Loss = 0 puan
-        points = (wins * 3) + (draws * 1)
-        max_points = total * 3
-        
-        return points / max_points if max_points > 0 else 0.5
+        return {
+            'home_win': h2h['team1_wins'] / total,
+            'away_win': h2h['team2_wins'] / total,
+            'draws': h2h['draws'] / total,
+            'home_wins': h2h['team1_wins'],
+            'away_wins': h2h['team2_wins']
+        }
     
-    def _calculate_h2h_score(self, h2h: Dict, home_team_name: str = None) -> float:
-        """H2H skoru (ev sahibi için)"""
-        if not h2h or not h2h.get('matches'):
-            return 0.5
+    def _analyze_goals(self, home_team: Dict, away_team: Dict) -> Dict:
+        """
+        Gol adetleri analizi
+        """
+        home_gf = home_team.get('goals_for', 0)
+        home_ga = home_team.get('goals_against', 0)
+        home_matches = home_team.get('wins', 0) + home_team.get('draws', 0) + home_team.get('losses', 0)
         
-        home_wins = h2h.get('team1_wins', 0)
-        away_wins = h2h.get('team2_wins', 0)
-        draws = h2h.get('draws', 0)
+        away_gf = away_team.get('goals_for', 0)
+        away_ga = away_team.get('goals_against', 0)
+        away_matches = away_team.get('wins', 0) + away_team.get('draws', 0) + away_team.get('losses', 0)
         
-        total = home_wins + away_wins + draws
-        if total == 0:
-            return 0.5
+        # Maç başına ortalama gol
+        home_gf_avg = home_gf / max(home_matches, 1)
+        away_gf_avg = away_gf / max(away_matches, 1)
+        home_ga_avg = home_ga / max(home_matches, 1)
+        away_ga_avg = away_ga / max(away_matches, 1)
         
-        # Ev sahibi için skor
-        home_points = (home_wins * 3) + (draws * 1)
-        max_points = total * 3
+        # Beklenen gol
+        expected_home_goals = home_gf_avg * 1.1  # Ev sahibi bonus
+        expected_away_goals = away_gf_avg * 0.9
         
-        return home_points / max_points if max_points > 0 else 0.5
+        return {
+            'home_scoring': min(1, home_gf_avg / 3),  # 3 gol = %100
+            'away_scoring': min(1, away_gf_avg / 3),
+            'home_gf_avg': home_gf_avg,
+            'away_gf_avg': away_gf_avg,
+            'expected_goals': expected_home_goals + expected_away_goals
+        }
     
-    def _calculate_defense_score(self, opponent_form: Dict) -> float:
-        """Savunma skoru (rakibin gol atmama oranına göre)"""
-        if not opponent_form:
-            return 0.5
+    def _analyze_defense(self, home_team: Dict, away_team: Dict) -> Dict:
+        """
+        Savunma kalitesi analizi (0-1, düşük = iyi savunma)
+        """
+        home_ga = home_team.get('goals_against', 0)
+        away_ga = away_team.get('goals_against', 0)
+        home_matches = home_team.get('wins', 0) + home_team.get('draws', 0) + home_team.get('losses', 0)
+        away_matches = away_team.get('wins', 0) + away_team.get('draws', 0) + away_team.get('losses', 0)
         
-        goals_for = opponent_form.get('goals_for', 0)
-        matches = len(opponent_form.get('form', []))
+        home_ga_avg = home_ga / max(home_matches, 1)
+        away_ga_avg = away_ga / max(away_matches, 1)
         
-        if matches == 0:
-            return 0.5
-        
-        avg_goals = goals_for / matches
-        # Daha az gol = daha iyi savunma
-        # 3+ gol = 0.3 skor, 0 gol = 0.9 skor
-        return max(0.2, 1 - (avg_goals / 3))
+        # 2.5 gol = kötü savunma
+        return {
+            'home_defense': max(0, min(1, home_ga_avg / 2.5)),
+            'away_defense': max(0, min(1, away_ga_avg / 2.5)),
+            'home_ga_avg': home_ga_avg,
+            'away_ga_avg': away_ga_avg
+        }
     
-    def _calculate_streak(self, form_list: List[str]) -> float:
-        """Son formu hesapla (son 3 maç)"""
-        if not form_list:
-            return 0.5
+    def _analyze_streak(self, home_team: Dict, away_team: Dict) -> Dict:
+        """
+        Seri analizi (arka arkaya kazanç/kaybı)
+        """
+        home_form = home_team.get('form', [])
+        away_form = away_team.get('form', [])
         
-        recent = form_list[:3]  # Son 3 maç
-        wins = recent.count('W')
-        draws = recent.count('D')
-        losses = recent.count('L')
+        def current_streak_score(form_list):
+            if not form_list:
+                return 0.5
+            # Son 3 maç
+            recent = form_list[:3]
+            if all(r == 'W' for r in recent):
+                return 0.8
+            elif all(r == 'W' or r == 'D' for r in recent):
+                return 0.6
+            elif all(r == 'L' for r in recent):
+                return 0.2
+            else:
+                return 0.5
         
-        points = (wins * 3) + (draws * 1)
-        max_points = len(recent) * 3
-        
-        return points / max_points if max_points > 0 else 0.5
+        return {
+            'home_streak': current_streak_score(home_form),
+            'away_streak': current_streak_score(away_form)
+        }
     
-    def _poisson_over_2_5(self, home_goals: float, away_goals: float) -> float:
-        """Poisson dağılımı ile Üstü 2.5 olasılığı"""
+    def _poisson_probability(self, lambda_param: float, k: float) -> float:
+        """
+        Poisson dağılımı ile gol olasılığını hesapla
+        lambda_param: beklenen gol sayısı
+        k: hedef gol sayısı
+        """
+        import math
+        
         try:
-            expected_total = home_goals + away_goals
-            
-            # 0, 1, 2 gol olasılıkları
-            prob_0 = math.exp(-expected_total)
-            prob_1 = expected_total * math.exp(-expected_total)
-            prob_2 = (expected_total ** 2 / 2) * math.exp(-expected_total)
-            
-            prob_under_2_5 = prob_0 + prob_1 + prob_2
-            return max(0.1, min(0.9, 1 - prob_under_2_5))
+            e = math.e
+            numerator = (lambda_param ** k) * (e ** (-lambda_param))
+            denominator = math.factorial(int(k))
+            return numerator / denominator
         except:
             return 0.5
     
-    def _both_teams_score_prob(self, home_goals: float, away_goals: float) -> float:
-        """Her iki takım gol attığı olasılığı"""
-        try:
-            # Basit formül: her takımın gol atma olasılığı
-            home_scores = 1 - math.exp(-home_goals)
-            away_scores = 1 - math.exp(-away_goals)
-            
-            return max(0.1, min(0.9, home_scores * away_scores))
-        except:
-            return 0.5
-    
-    def _calculate_risk_level(self, home_prob: float, away_prob: float, 
-                             draw_prob: float, home_form: float, away_form: float) -> str:
-        """Risk seviyesi belirle"""
-        
-        # En yüksek olasılık
-        max_prob = max(home_prob, away_prob, draw_prob)
-        
-        # Form farkı
-        form_diff = abs(home_form - away_form)
-        
-        if max_prob >= 0.65 and form_diff >= 0.2:
-            return "LOW"
-        elif max_prob >= 0.55 and form_diff >= 0.15:
-            return "MEDIUM"
-        elif max_prob >= 0.45:
-            return "MEDIUM"
-        else:
-            return "HIGH"
-    
-    def _generate_recommendation(self, home_prob: float, away_prob: float, draw_prob: float,
-                                over_prob: float, both_score: float,
-                                home_form: float, away_form: float) -> str:
-        """Tavsiye oluştur"""
+    def _generate_recommendation(self, analysis: Dict) -> str:
+        """
+        Analiz sonucundan tavsiye oluştur
+        """
+        home_prob = analysis['home_win_prob']
+        away_prob = analysis['away_win_prob']
+        draw_prob = analysis['draw_prob']
+        over_prob = analysis['over_2_5_prob']
         
         recommendations = []
         
-        # En yüksek olasılığı bul
-        max_prob = max(home_prob, away_prob, draw_prob)
+        # Kazıcı oranlarını kontrol et (gerçek oranlar gerekli)
+        if home_prob > 0.55:
+            recommendations.append(f"🏠 Ev Sahibi: %{int(home_prob*100)} ({home_prob:.2f} oran)")
+        elif away_prob > 0.55:
+            recommendations.append(f"✈️ Deplasman: %{int(away_prob*100)} ({away_prob:.2f} oran)")
+        elif draw_prob > 0.35:
+            recommendations.append(f"🤝 Beraberlik: %{int(draw_prob*100)} ({draw_prob:.2f} oran)")
         
-        if home_prob == max_prob and home_prob >= 0.50:
-            recommendations.append(f"🏠 Ev sahibi favorit ({int(home_prob*100)}%)")
-        elif away_prob == max_prob and away_prob >= 0.50:
-            recommendations.append(f"✈️ Deplasman takımı güçlü ({int(away_prob*100)}%)")
-        elif draw_prob == max_prob and draw_prob >= 0.40:
-            recommendations.append(f"🤝 Beraberlik muhtemel ({int(draw_prob*100)}%)")
+        if over_prob > 0.60:
+            recommendations.append(f"⚽ Üstü 2.5: %{int(over_prob*100)}")
+        elif over_prob < 0.40:
+            recommendations.append(f"🛑 Altı 2.5: %{int((1-over_prob)*100)}")
         
-        # Gol analizi
-        if over_prob >= 0.60:
-            recommendations.append("⚽ Üstü 2.5 gol bekleniyor")
-        elif over_prob <= 0.40:
-            recommendations.append("🛑 Altı 2.5 gol bekleniyor")
+        if analysis['both_teams_score'] > 0.60:
+            recommendations.append(f"🎯 Her İki Takım Gol: %{int(analysis['both_teams_score']*100)}")
         
-        if both_score >= 0.65:
-            recommendations.append("🎯 Her iki takım gol atacak")
+        return " | ".join(recommendations) if recommendations else "Karışık Maç"
+    
+    def _assess_risk(self, analysis: Dict) -> str:
+        """
+        Risk seviyesini belirle
+        """
+        home_prob = analysis['home_win_prob']
+        away_prob = analysis['away_win_prob']
+        max_prob = max(home_prob, away_prob, analysis['draw_prob'])
         
-        # Form farkı
-        if home_form > away_form + 0.15:
-            recommendations.append("📈 Ev sahibi formu daha iyi")
-        elif away_form > home_form + 0.15:
-            recommendations.append("📈 Deplasman takımı formu daha iyi")
-        
-        return " | ".join(recommendations) if recommendations else "🤔 Belirsiz maç"
+        if max_prob > 0.65:
+            return "LOW"
+        elif max_prob > 0.50:
+            return "MEDIUM"
+        else:
+            return "HIGH"
+
+
+# Örnek kullanım
+if __name__ == "__main__":
+    analyzer = BettingAnalyzer()
+    
+    # Örnek veri
+    home_team = {
+        'form': ['W', 'W', 'D', 'W', 'L'],
+        'wins': 4,
+        'draws': 1,
+        'losses': 1,
+        'goals_for': 15,
+        'goals_against': 6
+    }
+    
+    away_team = {
+        'form': ['W', 'D', 'L', 'W', 'L'],
+        'wins': 2,
+        'draws': 1,
+        'losses': 2,
+        'goals_for': 8,
+        'goals_against': 10
+    }
+    
+    h2h = {
+        'team1_wins': 3,
+        'team2_wins': 1,
+        'draws': 1,
+        'matches': []
+    }
+    
+    print("🎰 BET ANALYZER")
+    print("=" * 50)
+    
+    analysis = analyzer.analyze_match(home_team, away_team, h2h)
+    
+    print(f"\n📊 Sonuçlar:")
+    print(f"Ev Sahibi Kazanma: %{int(analysis['home_win_prob']*100)}")
+    print(f"Beraberlik: %{int(analysis['draw_prob']*100)}")
+    print(f"Deplasman Kazanma: %{int(analysis['away_win_prob']*100)}")
+    print(f"\nGol Analizi:")
+    print(f"Üstü 2.5: %{int(analysis['over_2_5_prob']*100)}")
+    print(f"Her İki Takım Gol: %{int(analysis['both_teams_score']*100)}")
+    print(f"\n💡 Tavsiye: {analysis['recommendation']}")
+    print(f"⚠️ Risk: {analysis['risk_level']}")
