@@ -27,6 +27,16 @@ class FootballDataAPI:
             'Kayserispor': 'https://www.flashscore.com/team/kayserispor/q1Dn39yj/',
         }
         
+        # Team ID -> Team Name mapping
+        self.team_id_map = {
+            1: 'Fenerbahçe',
+            2: 'Galatasaray',
+            3: 'Beşiktaş',
+            4: 'Trabzonspor',
+            5: 'Başakşehir',
+            6: 'Kayserispor',
+        }
+        
         # Gerçekçi takım verileri (güncel 2026)
         self.real_data = {
             'Fenerbahçe': {
@@ -76,26 +86,29 @@ class FootballDataAPI:
             return None
     
     def get_team_form(self, team_id: int, last_matches: int = 5) -> Dict:
-        """Takımın formunu döndür"""
+        """Takımın formunu döndür (team_id bazında)"""
         try:
-            if not self.current_team:
-                logger.warning("Takım belirtilmedi")
+            # Team ID'den takım adını al
+            if team_id not in self.team_id_map:
+                logger.warning(f"Bilinmeyen team_id: {team_id}")
                 return self._get_default_form()
             
-            # Önce cache'i kontrol et
-            if self.current_team in self.cache:
-                logger.info(f"📦 Cache'den: {self.current_team}")
-                return self.cache[self.current_team]
+            team_name = self.team_id_map[team_id]
+            self.current_team = team_name
             
-            # Eğer gerçek datamız varsa kullan
-            if self.current_team in self.real_data:
-                logger.info(f"📊 Gerçek data kullanılıyor: {self.current_team}")
-                data = self.real_data[self.current_team]
-                result = self._format_form_data(data, self.current_team)
-                self.cache[self.current_team] = result
+            # Cache'i kontrol et
+            if team_name in self.cache:
+                logger.info(f"📦 Cache'den: {team_name}")
+                return self.cache[team_name]
+            
+            # Gerçek datamız varsa kullan
+            if team_name in self.real_data:
+                logger.info(f"📊 Gerçek data: {team_name} (ID: {team_id})")
+                data = self.real_data[team_name]
+                result = self._format_form_data(data, team_name)
+                self.cache[team_name] = result
                 return result
             
-            # Fallback
             return self._get_default_form()
         
         except Exception as e:
