@@ -1,6 +1,7 @@
-import logging
+import requests
+from bs4 import BeautifulSoup
 from typing import Dict, List, Optional
-from datetime import datetime
+import logging
 import time
 
 logging.basicConfig(level=logging.INFO)
@@ -8,18 +9,20 @@ logger = logging.getLogger(__name__)
 
 class FootballDataAPI:
     """
-    Flashscore.com.tr'den Selenium ile GERÇEK veri çeken bot
-    - JavaScript render ediliyor
+    Sofascore.com'dan Web Scraping ile GERÇEK veri çeken bot
+    - Simple HTML parse (Flashscore'dan çok daha kolay)
     - Gerçek son maçlar
     - Gerçek skorlar
     - Hiç API kısıtlaması YOK!
     """
     
     def __init__(self):
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
         self.cache = {}
-        self.driver = None
         
-        # Türkiye Süper Lig takımları (Flashscore slug'ları)
+        # Türkiye Süper Lig takımları (Sofascore slug'ları)
         self.turkish_teams = {
             'Fenerbahçe': 'fenerbahce',
             'Galatasaray': 'galatasaray',
@@ -30,32 +33,6 @@ class FootballDataAPI:
         }
         
         self.team_id_map = {i+1: name for i, name in enumerate(self.turkish_teams.keys())}
-        
-        self._init_driver()
-    
-    def _init_driver(self):
-        """Selenium WebDriver'ı başlat"""
-        try:
-            from selenium import webdriver
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.chrome.options import Options
-            
-            # Chrome options
-            chrome_options = Options()
-            chrome_options.add_argument("--headless")  # Background'da çalış
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-            chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            
-            self.webdriver = webdriver
-            self.By = By
-            self.WebDriverWait = WebDriverWait
-            
-            logger.info("✅ Selenium hazır")
-        except Exception as e:
-            logger.error(f"Selenium init hatası: {e}")
     
     def search_team(self, team_name: str) -> Optional[Dict]:
         """Takımı bul"""
@@ -78,7 +55,7 @@ class FootballDataAPI:
             return None
     
     def get_team_form(self, team_id: int, last_matches: int = 5) -> Dict:
-        """Flashscore'dan takımın son maçlarını çek (Selenium)"""
+        """Sofascore'dan takımın son maçlarını çek"""
         try:
             if team_id not in self.team_id_map:
                 logger.warning(f"Bilinmeyen team_id: {team_id}")
@@ -87,7 +64,7 @@ class FootballDataAPI:
             team_name = self.team_id_map[team_id]
             slug = self.turkish_teams[team_name]
             
-            logger.info(f"🔴 Flashscore'dan {team_name} çekiliyor (Selenium)...")
+            logger.info(f"🔴 Sofascore'dan {team_name} çekiliyor...")
             
             # Cache kontrol
             cache_key = f"form_{team_id}"
@@ -95,8 +72,8 @@ class FootballDataAPI:
                 logger.info(f"📦 Cache'den: {team_name}")
                 return self.cache[cache_key]
             
-            # Flashscore'dan çek
-            form_data = self._scrape_flashscore(team_name, slug, last_matches)
+            # Sofascore'dan çek
+            form_data = self._scrape_sofascore(team_name, slug, last_matches)
             
             if form_data:
                 logger.info(f"✅ {team_name}: {form_data['form']} - {form_data['wins']}W-{form_data['draws']}D-{form_data['losses']}L")
@@ -110,45 +87,70 @@ class FootballDataAPI:
             logger.error(f"Form çekme hatası: {e}")
             return self._get_fallback_form()
     
-    def _scrape_flashscore(self, team_name: str, slug: str, limit: int = 5) -> Optional[Dict]:
-        """Flashscore'dan Selenium ile scrape et"""
-        driver = None
+    def _scrape_sofascore(self, team_name: str, slug: str, limit: int = 5) -> Optional[Dict]:
+        """Sofascore'dan HTML scrape et"""
         try:
-            # Driver başlat
-            driver = self.webdriver.Chrome(options=self.webdriver.chrome_options.Options())
-            driver.set_page_load_timeout(15)
-            
-            # Flashscore takım sayfasını aç
-            url = f"https://www.flashscore.com.tr/takim/{slug}/sonuclar/"
+            # Sofascore takım sayfasını aç
+            url = f"https://www.sofascore.com/tr/{slug}/gozlemci"
             logger.info(f"📡 Açılıyor: {url}")
             
-            driver.get(url)
-            time.sleep(3)  # JavaScript yüklenmesini bekle
+            try:
+                response = requests.get(url, headers=self.headers, timeout=10)
+                response.encoding = 'utf-8'
+            except:
+                logger.warning(f"Sofascore erişilemiyor")
+                return None
             
-            # Maçları bul
+            if response.status_code != 200:
+                logger.warning(f"Status {response.status_code}")
+                return None
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
             form = []
             goals_for = 0
             goals_against = 0
             match_count = 0
             
-            # Maç elementlerini ara
-            matches = driver.find_elements(self.By.CLASS_NAME, "event__match")
-            logger.info(f"Bulunan maç sayısı: {len(matches)}")
+            # Sofascore'da maçları ara
+            # Farklı selector'ları dene
+            matches = soup.find_all('div', class_=['Event__Container', 'event', 'match-item'])
             
-            for match_elem in matches[:15]:
+            if not matches:
+                logger.warning("Maç container'ı bulunamadı, başka selector dene")
+                # Alternatif selector
+                matches = soup.find_all('a', class_=['eventText', 'match-link'])
+            
+            logger.info(f"Bulunan maç element sayısı: {len(matches)}")
+            
+            for match_elem in matches[:20]:
                 if match_count >= limit:
                     break
                 
                 try:
-                    # Skor bul
-                    score_elem = match_elem.find_element(self.By.CLASS_NAME, "score")
-                    score_text = score_elem.text.strip()
+                    # Skor bul - Sofascore'da genellikle "3-1" formatında
+                    score_text = None
+                    
+                    # Birden fazla selector dene
+                    score_elem = match_elem.find('span', class_=['score', 'event-score', 'Score__Value'])
+                    if score_elem:
+                        score_text = score_elem.text.strip()
+                    
+                    if not score_text:
+                        # Text'i doğrudan ara
+                        text = match_elem.get_text()
+                        # "3-1" gibi pattern ara
+                        import re
+                        scores = re.findall(r'(\d+)\s*-\s*(\d+)', text)
+                        if scores:
+                            score_text = f"{scores[0][0]}-{scores[0][1]}"
+                    
+                    if not score_text or '-' not in score_text:
+                        continue
                     
                     logger.debug(f"Skor: {score_text}")
                     
-                    if '-' not in score_text:
-                        continue
-                    
+                    # Skor parse et
                     parts = score_text.split('-')
                     if len(parts) != 2:
                         continue
@@ -160,29 +162,25 @@ class FootballDataAPI:
                         continue
                     
                     # Takım adlarını bul
-                    try:
-                        team_names = match_elem.find_elements(self.By.CLASS_NAME, "event__participant")
-                        if len(team_names) < 2:
-                            continue
-                        
-                        home_name = team_names[0].text.strip()
-                        away_name = team_names[1].text.strip()
-                    except:
+                    team_names = match_elem.get_text()
+                    
+                    # team_name'i ara
+                    if team_name.lower() not in team_names.lower():
                         continue
                     
-                    logger.debug(f"Maç: {home_name} {home_goals}-{away_goals} {away_name}")
+                    logger.debug(f"Maç metni: {team_names[:100]}")
                     
-                    # Hangi tarafta olduğunu belirle
-                    is_home = team_name.lower() in home_name.lower()
-                    is_away = team_name.lower() in away_name.lower()
+                    # Basit heuristic: takım adının konumuna göre home/away belirle
+                    # Genellikle ilk takım home
+                    team_pos = team_names.lower().find(team_name.lower())
+                    score_pos = team_names.find(score_text)
                     
-                    if not is_home and not is_away:
-                        continue
-                    
-                    if is_home:
+                    if score_pos > team_pos:
+                        # Takım adı score'dan önce = home
                         team_goals = home_goals
                         opp_goals = away_goals
                     else:
+                        # Takım adı score'dan sonra = away
                         team_goals = away_goals
                         opp_goals = home_goals
                     
@@ -198,7 +196,7 @@ class FootballDataAPI:
                         form.append('L')
                     
                     match_count += 1
-                    logger.info(f"✅ Maç: {home_name} {home_goals}-{away_goals} {away_name} → {team_name} = {'W' if team_goals > opp_goals else 'D' if team_goals == opp_goals else 'L'}")
+                    logger.info(f"✅ Maç: {score_text} → {team_name} = {'W' if team_goals > opp_goals else 'D' if team_goals == opp_goals else 'L'}")
                 
                 except Exception as e:
                     logger.debug(f"Maç parse hatası: {e}")
@@ -243,10 +241,6 @@ class FootballDataAPI:
         except Exception as e:
             logger.error(f"Scrape hatası: {e}")
             return None
-        
-        finally:
-            if driver:
-                driver.quit()
     
     def _get_scoring_power(self, gf_avg: float) -> str:
         if gf_avg >= 2.5:
