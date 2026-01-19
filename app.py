@@ -97,25 +97,23 @@ def analyze():
         response = {
             'home_team': home_team_name,
             'away_team': away_team_name,
-            'home_win_prob': analysis['home_win_prob'],
-            'draw_prob': analysis['draw_prob'],
-            'away_win_prob': analysis['away_win_prob'],
-            'over_2_5_prob': analysis['over_2_5_prob'],
-            'under_2_5_prob': analysis['under_2_5_prob'],
-            'both_teams_score': analysis['both_teams_score'],
-            'recommendation': analysis['recommendation'],
-            'risk_level': analysis['risk_level'],
+            'home_win_prob': analysis['win_probabilities']['home'],
+            'draw_prob': analysis['win_probabilities']['draw'],
+            'away_win_prob': analysis['win_probabilities']['away'],
+            'over_2_5_prob': analysis['goal_predictions']['over_2_5'] / 100,
+            'under_2_5_prob': analysis['goal_predictions']['under_2_5'] / 100,
+            'both_teams_score': analysis['goal_predictions']['both_teams_score'] / 100,
+            'recommendation': analysis['recommendations']['main'],
+            'risk_level': analysis['assessment']['risk_level'],
+            'assessment': analysis['assessment'],
+            'goal_predictions': analysis['goal_predictions'],
+            'form_analysis': analysis['form_analysis'],
+            'h2h_analysis': analysis['h2h_analysis'],
+            'recommendations': analysis['recommendations'],
             'detailed_analysis': {
-                'form': analysis['detailed_analysis']['form'],
-                'h2h': analysis['detailed_analysis']['h2h'],
-                'goals': {
-                    'home_scoring': analysis['detailed_analysis']['goals']['home_scoring'],
-                    'away_scoring': analysis['detailed_analysis']['goals']['away_scoring'],
-                    'home_gf_avg': analysis['detailed_analysis']['goals']['home_gf_avg'],
-                    'away_gf_avg': analysis['detailed_analysis']['goals']['away_gf_avg'],
-                    'expected_goals': analysis['detailed_analysis']['goals']['expected_goals']
-                },
-                'defense': analysis['detailed_analysis']['defense']
+                'form': analysis['form_analysis'],
+                'h2h': analysis['h2h_analysis'],
+                'goals': analysis['goal_predictions']
             },
             'recent_goals': {
                 'home_team_goals': home_form.get('recent_goals', {}),
