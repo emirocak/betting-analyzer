@@ -116,6 +116,10 @@ def analyze():
                     'expected_goals': analysis['detailed_analysis']['goals']['expected_goals']
                 },
                 'defense': analysis['detailed_analysis']['defense']
+            },
+            'recent_goals': {
+                'home_team_goals': home_form.get('recent_goals', {}),
+                'away_team_goals': away_form.get('recent_goals', {})
             }
         }
         
