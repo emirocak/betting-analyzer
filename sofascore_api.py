@@ -20,18 +20,16 @@ class FootballDataAPI:
         self.current_team = None
         self.cache = {}
         
-        # Türkiye Süper Lig takımlarının API ID'leri
+        # Türkiye Süper Lig takımlarının GERÇEK API-Football ID'leri
         self.turkish_teams = {
-            'Fenerbahçe': 1204,
-            'Galatasaray': 1205,
-            'Beşiktaş': 1206,
-            'Trabzonspor': 1207,
-            'Başakşehir': 1208,
+            'Fenerbahçe': 611,
+            'Galatasaray': 645,
+            'Beşiktaş': 549,
+            'Trabzonspor': 998,
+            'Başakşehir': 1213,
             'Kayserispor': 1209,
             'Sivasspor': 1210,
             'Antalyaspor': 1211,
-            'Adana Demirspor': 1212,
-            'Gaziantep FK': 1213,
         }
         
         # Team ID -> Team Name mapping
